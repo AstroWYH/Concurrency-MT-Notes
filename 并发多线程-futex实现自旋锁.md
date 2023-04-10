@@ -19,41 +19,46 @@ public:
     void lock() {
         while (true) {
             bool expected = false;
+            // 尝试将 flag 原子变量从 false 置为 true
             if (flag.compare_exchange_strong(expected, true)) {
-                return;
+                return; // 成功获取锁
             }
+            // 获取锁失败，等待
             syscall(SYS_futex, &flag, FUTEX_WAIT, 1, nullptr, nullptr, 0);
         }
     }
 
     void unlock() {
+        // 释放锁，将 flag 原子变量置为 false
         flag.store(false);
+        // 唤醒等待该锁的线程
         syscall(SYS_futex, &flag, FUTEX_WAKE, 1, nullptr, nullptr, 0);
     }
 
 private:
-    std::atomic<bool> flag;
+    std::atomic<bool> flag; // 原子变量用于实现自旋锁
 };
 
 int main() {
-    SpinLock lock;
-    int count = 0;
+    SpinLock lock; // 创建自旋锁
+    int count = 0; // 共享变量
 
     for (int i = 0; i < 10; ++i) {
+        // 创建 10 个线程并发修改共享变量
         std::thread([&]{
-            for (int j = 0; j < 100000; ++j) {
-                lock.lock();
-                ++count;
-                lock.unlock();
+            for (int j = 0; j < 100000; ++j) { // 每个线程累加 100000 次
+                lock.lock(); // 获取锁
+                ++count; // 修改共享变量
+                lock.unlock(); // 释放锁
             }
-        }).detach();
+        }).detach(); // 分离线程，使得线程结束时自动回收资源
     }
 
-    sleep(1);
-    std::cout << "count = " << count << std::endl;
+    sleep(1); // 等待 1 秒，等待线程执行完毕
+    std::cout << "count = " << count << std::endl; // 输出共享变量的值
 
     return 0;
 }
-
 ```
 
+这段代码实现了一个自旋锁，并用该锁保护了一个共享变量`count`的并发访问。其中，`SpinLock`类实现了自旋锁，通过`flag`原子变量的状态实现自旋等待，通过系统调用`syscall`函数实现了对`flag`原子变量的操作。`main`函数创建了 10 个线程，并发修改`count`共享变量，每个线程累加`count`的值 100000 次。`sleep(1)`语句等待所有线程执行完毕，然后输出`count`的值。
